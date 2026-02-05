@@ -26,6 +26,11 @@ const saleSchema = new Schema<ISale>(
       required: true,
       trim: true,
     },
+    customerNumber: {
+      type: String,
+      required: true,
+      trim: true,
+    },
 
     quantity: {
       type: Number,

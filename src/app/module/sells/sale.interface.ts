@@ -7,6 +7,7 @@ export interface ISale {
   invoiceNo: string;
 
   customerName: string;
+  customerNumber: string;
   productName: string;
 
   quantity: number;

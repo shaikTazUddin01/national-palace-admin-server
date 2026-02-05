@@ -21,6 +21,9 @@ const createSale = async (payload: Partial<ISale>) => {
   if (!payload.customerName) {
     throw new AppError(StatusCodes.BAD_REQUEST, "Customer name is required");
   }
+  if (!payload.customerNumber) {
+    throw new AppError(StatusCodes.BAD_REQUEST, "Customer Number is required");
+  }
   if (!payload.productName) {
     throw new AppError(StatusCodes.BAD_REQUEST, "Product name is required");
   }
@@ -51,6 +54,7 @@ const createSale = async (payload: Partial<ISale>) => {
 
     customerName: payload.customerName,
     productName: payload.productName,
+    customerNumber: payload.customerNumber,
 
     quantity,
     unitPrice,

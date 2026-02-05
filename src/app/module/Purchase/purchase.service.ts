@@ -4,6 +4,7 @@ import { IPurchase } from "./purchase.interface";
 import { Purchase } from "./purchase.model";
 import { Product } from "../Product/product.model";
 import { generateSku } from "../../utils/generateSku";
+import { Category } from "../Category/category.model";
 
 /**
  * Create Purchase
@@ -19,10 +20,19 @@ const createPurchase = async (payload: Partial<IPurchase>) => {
   const purchasePrice = Number(payload.purchasePrice ?? 0);
   const paidAmount = Number(payload.paidAmount ?? 0);
 
+  const category = String((payload as any)?.category ?? "").trim();
+  const salePrice = Number((payload as any)?.salePrice ?? 0);
+
+  if (!category) {
+    throw new AppError(StatusCodes.BAD_REQUEST, "Category is required");
+  }
+
   if (quantity <= 0)
     throw new AppError(StatusCodes.BAD_REQUEST, "Quantity must be at least 1");
   if (purchasePrice < 0)
     throw new AppError(StatusCodes.BAD_REQUEST, "Purchase price cannot be negative");
+  if (salePrice < 0)
+    throw new AppError(StatusCodes.BAD_REQUEST, "Sale price cannot be negative");
   if (paidAmount < 0)
     throw new AppError(StatusCodes.BAD_REQUEST, "Paid amount cannot be negative");
 
@@ -36,7 +46,6 @@ const createPurchase = async (payload: Partial<IPurchase>) => {
     );
   }
 
-  // payment method required only if paidAmount > 0
   if (paidAmount > 0 && !payload.paymentMethod) {
     throw new AppError(
       StatusCodes.BAD_REQUEST,
@@ -44,63 +53,65 @@ const createPurchase = async (payload: Partial<IPurchase>) => {
     );
   }
 
-  // ✅ Purchase Status
   const purchaseStatus: "PAID" | "DUE" = dueAmount > 0 ? "DUE" : "PAID";
-
-  // =====================================================
-  // ✅ PRODUCT STOCK UPDATE OR CREATE NEW PRODUCT
-  // =====================================================
 
   const productName = String(payload.productName).trim();
 
-  // ✅ find by name (case-insensitive exact match)
+  // =====================================================
+  // ✅ 1. ENSURE CATEGORY EXISTS
+  // =====================================================
+  const existingCategory = await Category.findOne({
+    name: { $regex: new RegExp(`^${category}$`, "i") },
+  });
+
+  if (!existingCategory) {
+    await Category.create({
+      name: category,
+      code: `${category.toUpperCase().slice(0, 4)}-${Date.now().toString().slice(-4)}`,
+      status: "active",
+      createdBy: payload.createdBy,
+    });
+  }
+
+  // =====================================================
+  // ✅ 2. FIND PRODUCT (name + category + purchasePrice)
+  // =====================================================
   const existingProduct = await Product.findOne({
     name: { $regex: new RegExp(`^${productName}$`, "i") },
+    category: { $regex: new RegExp(`^${category}$`, "i") },
+    purchasePrice: purchasePrice,
   });
 
   if (existingProduct) {
-    // ✅ stock add (old + new)
-    existingProduct.quantity = Number(existingProduct.quantity ?? 0) + quantity;
+    // ✅ ONLY STOCK INCREASE
+    existingProduct.quantity =
+      Number(existingProduct.quantity ?? 0) + quantity;
 
-    // ✅ optional: update latest purchase price
-    existingProduct.purchasePrice = purchasePrice;
+    // optional: update sale price
+    if (salePrice > 0) {
+      existingProduct.salePrice = salePrice;
+    }
 
     await existingProduct.save();
   } else {
-    // ✅ new product needs category (required in schema)
-    const category = String((payload as any)?.category ?? "").trim();
-    if (!category) {
-      throw new AppError(
-        StatusCodes.BAD_REQUEST,
-        "Category is required for new product"
-      );
-    }
+    // =====================================================
+    // ✅ 3. CREATE NEW PRODUCT
+    // =====================================================
+    const finalSalePrice = salePrice > 0 ? salePrice : purchasePrice;
 
-    // ✅ schema requires salePrice → simple default = purchasePrice
-    const salePrice = purchasePrice;
-
-    // ✅ schema requires unique sku → auto generate and ensure unique
     let sku = generateSku();
     for (let i = 0; i < 5; i++) {
       const exists = await Product.findOne({ sku });
       if (!exists) break;
       sku = generateSku();
     }
-    const stillExists = await Product.findOne({ sku });
-    if (stillExists) {
-      throw new AppError(
-        StatusCodes.INTERNAL_SERVER_ERROR,
-        "Failed to generate unique SKU"
-      );
-    }
 
-    // ✅ create new product with initial stock
     await Product.create({
       name: productName,
       category,
       sku,
       purchasePrice,
-      salePrice,
+      salePrice: finalSalePrice,
       quantity,
       status: "active",
       createdBy: payload.createdBy,
@@ -108,12 +119,11 @@ const createPurchase = async (payload: Partial<IPurchase>) => {
   }
 
   // =====================================================
-  // ✅ CREATE PURCHASE
+  // ✅ 4. CREATE PURCHASE (ALWAYS)
   // =====================================================
-
   const finalPayload: IPurchase = {
     supplierName: payload.supplierName,
-    productName: productName,
+    productName,
     quantity,
     purchasePrice,
     totalAmount,

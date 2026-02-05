@@ -10,6 +10,7 @@ export interface IPurchase {
 
   quantity: number;
   purchasePrice: number; // per unit
+  salePrice?: number; // per unit
 
   totalAmount: number; // quantity * purchasePrice
   paidAmount: number;

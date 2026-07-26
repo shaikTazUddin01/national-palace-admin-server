@@ -13,6 +13,7 @@ app.use(
   cors({
     origin: [
       "https://national-palace-admin-dashboard.vercel.app",
+      "https://inventory-management-system-mauve-gamma.vercel.app",
       "http://localhost:4000",
     ],
     credentials: true,
